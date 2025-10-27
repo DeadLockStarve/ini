@@ -16,6 +16,7 @@ package ini
 
 import (
 	"bytes"
+	"encoding"
 	"errors"
 	"fmt"
 	"reflect"
@@ -320,6 +321,14 @@ func (s *Section) mapToField(val reflect.Value, isStrict bool, sectionIndex int,
 				return fmt.Errorf("map to field %q: %v", fieldName, err)
 			}
 		} else if isAnonymousPtr || isStruct || isStructPtr {
+			if key, err := s.GetKey(fieldName); err == nil {
+				if u, ok := field.Addr().Interface().(encoding.TextUnmarshaler); ok {
+					if err := u.UnmarshalText([]byte(key.String())); err != nil {
+						return wrapStrictError(err, isStrict)
+					}
+					continue
+				}
+			}
 			if secs, err := s.f.SectionsByName(fieldName); err == nil {
 				if len(secs) <= sectionIndex {
 					return fmt.Errorf("there are not enough sections (%d <= %d) for the field %q", len(secs), sectionIndex, fieldName)
@@ -615,6 +624,19 @@ func (s *Section) reflectFrom(val reflect.Value) error {
 
 		if (tpField.Type.Kind() == reflect.Ptr && tpField.Type.Elem().Kind() == reflect.Struct) ||
 			(tpField.Type.Kind() == reflect.Struct && tpField.Type.Name() != "Time") {
+			if m, ok := field.Interface().(encoding.TextMarshaler); ok {
+				text, err := m.MarshalText()
+				if err != nil {
+					return fmt.Errorf("marshal field %q: %v", fieldName, err)
+				}
+				key, err := s.GetKey(fieldName)
+				if err != nil {
+					key, _ = s.NewKey(fieldName, "")
+				}
+				key.SetValue(string(text))
+				continue
+			}
+
 			// Note: The only error here is section doesn't exist.
 			sec, err := s.f.GetSection(fieldName)
 			if err != nil {
