@@ -337,14 +337,13 @@ func (s *Section) mapToField(val reflect.Value, isStrict bool, sectionIndex int,
 		key, keyErr := s.GetKey(fieldName)
 		if !(extends && isEmbedded) && (isAnonymousPtr || isStruct || isStructPtr) {
 			secs, err := s.f.SectionsByName(fieldName)
-			curSection := secs[sectionIndex] // Will be processed only with appropriate section verifications, no problem if nil
 			if err == nil && len(secs) > sectionIndex {
 				if isStructPtr && field.IsNil() {
 					field.Set(reflect.New(tpField.Type.Elem())) // Will be processed anyway, no risk of no data non-nil struct
 				}
 				// Custom unmarshaling first
 				if u, ok := field.Addr().Interface().(Unmarshaler); ok {
-					if err := u.UnmarshalINI(curSection); err != nil {
+					if err := u.UnmarshalINI(secs[sectionIndex]); err != nil {
 						return wrapStrictError(err, isStrict)
 					}
 					continue
@@ -367,7 +366,7 @@ func (s *Section) mapToField(val reflect.Value, isStrict bool, sectionIndex int,
 					return fmt.Errorf("there are not enough sections (%d <= %d) for the field %q", len(secs), sectionIndex, fieldName)
 				}
 				// Then regular struct unmarshaling
-				if err = curSection.mapToField(field, isStrict, sectionIndex, fieldName); err != nil {
+				if err = secs[sectionIndex].mapToField(field, isStrict, sectionIndex, fieldName); err != nil {
 					return fmt.Errorf("map to field %q: %v", fieldName, err)
 				}
 				continue
