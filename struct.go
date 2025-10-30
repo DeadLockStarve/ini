@@ -683,51 +683,43 @@ func (s *Section) reflectFrom(val reflect.Value) error {
 }
 
 // ReflectFrom reflects section from given struct. It overwrites existing ones.
-func (s *Section) ReflectFrom(v interface{}) error {
+func (s *Section) ReflectFrom(v interface{}) (err error) {
 	typ := reflect.TypeOf(v)
 	val := reflect.ValueOf(v)
+	sec := s
+	nonUnique := s.f.options.AllowNonUniqueSections && s.name != DefaultSection
 
-	if s.name != DefaultSection && s.f.options.AllowNonUniqueSections &&
-		(typ.Kind() == reflect.Slice || typ.Kind() == reflect.Ptr) {
-		// Clear sections to make sure none exists before adding the new ones
-		s.f.DeleteSection(s.name)
-
-		if typ.Kind() == reflect.Ptr {
-			sec, err := s.f.NewSection(s.name)
-			if err != nil {
+	switch typ.Kind() {
+	case reflect.Ptr:
+		if nonUnique {
+			s.f.DeleteSection(s.name)
+			if sec, err = sec.f.NewSection(sec.name); err != nil {
 				return err
 			}
-			return sec.reflectFrom(val.Elem())
 		}
-
+		return sec.reflectFrom(val.Elem())
+	case reflect.Slice:
+		if !nonUnique {
+			return errors.New("slices only supported with non unique sections")
+		}
+		s.f.DeleteSection(s.name)
 		slice := val.Slice(0, val.Len())
-		sliceOf := val.Type().Elem().Kind()
-		if sliceOf != reflect.Ptr {
+		if val.Type().Elem().Kind() != reflect.Ptr {
 			return fmt.Errorf("not a slice of pointers")
 		}
 
 		for i := 0; i < slice.Len(); i++ {
-			sec, err := s.f.NewSection(s.name)
-			if err != nil {
+			if sec, err = s.f.NewSection(sec.name); err != nil {
 				return err
 			}
-
-			err = sec.reflectFrom(slice.Index(i))
-			if err != nil {
+			if err := sec.reflectFrom(slice.Index(i).Elem()); err != nil {
 				return fmt.Errorf("reflect from %dth field: %v", i, err)
 			}
 		}
-
 		return nil
+	default:
+		return errors.New("not a pointer to a struct or slice of pointers")
 	}
-
-	if typ.Kind() == reflect.Ptr {
-		val = val.Elem()
-	} else {
-		return errors.New("not a pointer to a struct")
-	}
-
-	return s.reflectFrom(val)
 }
 
 // ReflectFrom reflects file from given struct.
